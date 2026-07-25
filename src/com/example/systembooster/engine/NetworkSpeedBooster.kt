@@ -8,7 +8,7 @@ import java.io.InputStreamReader
 open class NetworkSpeedBooster(
     private val command: List<String> = listOf("ping", "-c", "3", "8.8.8.8")
 ) {
-    open suspend fun boost(): Boolean = withContext(Dispatchers.IO) {
+    open suspend fun applyNetworkOptimization(): Boolean = withContext(Dispatchers.IO) {
         try {
             println("[NetworkSpeedBooster] Starting network tuning/verification...")
             val process = ProcessBuilder(command).apply {
