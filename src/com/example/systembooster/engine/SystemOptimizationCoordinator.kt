@@ -1,7 +1,9 @@
 package com.example.systembooster.engine
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
 
 sealed class OptimizationOutcome {
     object FullSuccess : OptimizationOutcome()
@@ -9,40 +11,32 @@ sealed class OptimizationOutcome {
     object FullFailure : OptimizationOutcome()
 }
 
+data class OptimizationResult(
+    val launchResult: Boolean,
+    val networkResult: Boolean
+)
+
 open class SystemOptimizationCoordinator(
-    private val appLaunchSpeedBooster: AppLaunchSpeedBooster,
-    private val networkSpeedBooster: NetworkSpeedBooster
+    private val launchBooster: AppLaunchSpeedBooster,
+    private val networkBooster: NetworkSpeedBooster,
+    private val dispatcher: CoroutineDispatcher
 ) {
-    open suspend fun optimize(): OptimizationOutcome = supervisorScope {
-        println("[SystemOptimizationCoordinator] Initiating parallel system optimization...")
-
-        val appLaunchJob = async {
-            try {
-                appLaunchSpeedBooster.boost()
-            } catch (e: Exception) {
-                println("[SystemOptimizationCoordinator] AppLaunchSpeedBooster threw exception: ${e.message}")
-                false
+    open suspend fun optimize(targetPackageName: String): OptimizationResult = withContext(dispatcher) {
+        supervisorScope {
+            val launchDeferred = async {
+                runCatching { launchBooster.optimizeAppLaunch(targetPackageName) }
+                    .getOrDefault(false)
             }
-        }
 
-        val networkJob = async {
-            try {
-                networkSpeedBooster.boost()
-            } catch (e: Exception) {
-                println("[SystemOptimizationCoordinator] NetworkSpeedBooster threw exception: ${e.message}")
-                false
+            val networkDeferred = async {
+                runCatching { networkBooster.applyNetworkOptimization() }
+                    .getOrDefault(false)
             }
-        }
 
-        val appLaunchSuccess = appLaunchJob.await()
-        val networkSuccess = networkJob.await()
-
-        println("[SystemOptimizationCoordinator] Optimization tasks completed. AppLaunch success: $appLaunchSuccess, Network success: $networkSuccess")
-
-        when {
-            appLaunchSuccess && networkSuccess -> OptimizationOutcome.FullSuccess
-            appLaunchSuccess || networkSuccess -> OptimizationOutcome.PartialSuccess
-            else -> OptimizationOutcome.FullFailure
+            OptimizationResult(
+                launchResult = launchDeferred.await(),
+                networkResult = networkDeferred.await()
+            )
         }
     }
 }
