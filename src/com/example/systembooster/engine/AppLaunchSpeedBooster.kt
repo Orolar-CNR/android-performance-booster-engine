@@ -6,12 +6,13 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 
 open class AppLaunchSpeedBooster(
-    private val command: List<String> = listOf("cmd", "package", "compile", "-m", "speed-profile", "-f", "com.example.systembooster")
+    private val command: List<String>? = null
 ) {
-    open suspend fun boost(): Boolean = withContext(Dispatchers.IO) {
+    open suspend fun optimizeAppLaunch(targetPackageName: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            println("[AppLaunchSpeedBooster] Starting application compilation optimization...")
-            val process = ProcessBuilder(command).apply {
+            println("[AppLaunchSpeedBooster] Starting application compilation optimization for $targetPackageName...")
+            val actualCommand = command ?: listOf("cmd", "package", "compile", "-m", "speed-profile", "-f", targetPackageName)
+            val process = ProcessBuilder(actualCommand).apply {
                 redirectErrorStream(true)
             }.start()
 
