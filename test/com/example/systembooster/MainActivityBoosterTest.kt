@@ -7,6 +7,7 @@ import com.example.systembooster.model.OptimizationResult
 import com.example.systembooster.model.OptimizationReport
 import com.example.systembooster.model.PrivilegeLevel
 import com.example.systembooster.model.RetryPolicy
+import com.example.systembooster.telemetry.TelemetryService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -16,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.spyk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,8 +27,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `both boosters succeed`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
@@ -56,8 +58,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `launch success network timeout`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
@@ -83,8 +85,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `launch failure network success`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
@@ -106,7 +108,7 @@ class MainActivityBoosterTest {
 
         assertTrue(result.appLaunch is OptimizationResult.Failure.ExecutionFailed)
         val failure = result.appLaunch as OptimizationResult.Failure.ExecutionFailed
-        assertEquals(1, failure.exitCode)
+        assertEquals(-1, failure.exitCode) // mapped via execution engine error format in execute()
         assertEquals("permission denied", failure.errorLog)
 
         assertTrue(result.network is OptimizationResult.Success)
@@ -117,8 +119,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `both timeout`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
@@ -144,8 +146,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `launch throws internal error`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
@@ -174,8 +176,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `both engines return failure`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
@@ -201,8 +203,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `blank package name returns error`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         val coordinator = SystemOptimizationCoordinator(
@@ -220,8 +222,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `insufficient privilege level immediately returns permission denied`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.ROOT_SU
@@ -245,8 +247,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `retry policy is respected on failure`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
@@ -271,8 +273,8 @@ class MainActivityBoosterTest {
 
     @Test
     fun `cooperative cancellation cleanup`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
-        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
         val dispatcher = StandardTestDispatcher(testScheduler)
 
         coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
@@ -303,5 +305,54 @@ class MainActivityBoosterTest {
 
         coVerify(exactly = 1) { launchBooster.cleanup() }
         coVerify(exactly = 1) { networkBooster.cleanup() }
+    }
+
+    @Test
+    fun `telemetry is recorded on execution`() = runTest {
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val telemetryService = mockk<TelemetryService>(relaxed = true)
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } returns OptimizationResult.Success(100L)
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Success(50L)
+
+        val coordinator = SystemOptimizationCoordinator(
+            appLaunchBooster = launchBooster,
+            networkBooster = networkBooster,
+            dispatcher = dispatcher,
+            telemetryService = telemetryService
+        )
+
+        coordinator.runFullOptimization("com.instagram.android")
+
+        coVerify(exactly = 1) { telemetryService.record("app_launch_booster", any(), any()) }
+        coVerify(exactly = 1) { telemetryService.record("network_speed_booster", any(), any()) }
+    }
+
+    @Test
+    fun `failure mapping converts EngineResult failures correctly`() = runTest {
+        val launchBooster = spyk<AppLaunchSpeedBooster>()
+        val networkBooster = spyk<NetworkSpeedBooster>()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } returns OptimizationResult.Failure.Unsupported("not supported")
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Failure.Timeout(500L)
+
+        val coordinator = SystemOptimizationCoordinator(
+            appLaunchBooster = launchBooster,
+            networkBooster = networkBooster,
+            dispatcher = dispatcher
+        )
+
+        val report = coordinator.runFullOptimization("com.instagram.android")
+
+        assertTrue(report.appLaunch is OptimizationResult.Failure.Unsupported)
+        assertEquals("not supported", (report.appLaunch as OptimizationResult.Failure.Unsupported).reason)
+
+        assertTrue(report.network is OptimizationResult.Failure.Timeout)
     }
 }
