@@ -1,15 +1,22 @@
 package com.example.systembooster
 
+import com.example.systembooster.coordinator.SystemOptimizationCoordinator
 import com.example.systembooster.engine.AppLaunchSpeedBooster
 import com.example.systembooster.engine.NetworkSpeedBooster
-import com.example.systembooster.engine.SystemOptimizationCoordinator
+import com.example.systembooster.model.OptimizationResult
+import com.example.systembooster.model.OptimizationReport
+import com.example.systembooster.model.PrivilegeLevel
+import com.example.systembooster.model.RetryPolicy
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,68 +24,284 @@ import org.junit.Test
 class MainActivityBoosterTest {
 
     @Test
-    fun `optimize returns success when both coroutines succeed`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>()
-        val networkBooster = mockk<NetworkSpeedBooster>()
+    fun `both boosters succeed`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
         val dispatcher = StandardTestDispatcher(testScheduler)
 
-        coEvery { launchBooster.optimizeAppLaunch("com.instagram.android") } returns true
-        coEvery { networkBooster.applyNetworkOptimization() } returns true
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } returns OptimizationResult.Success(120L)
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Success(80L)
 
         val coordinator = SystemOptimizationCoordinator(
-            launchBooster = launchBooster,
+            appLaunchBooster = launchBooster,
             networkBooster = networkBooster,
             dispatcher = dispatcher
         )
 
-        val result = coordinator.optimize("com.instagram.android")
-        advanceUntilIdle()
+        val result = coordinator.runFullOptimization("com.instagram.android")
 
-        assertTrue(result.launchResult)
-        assertTrue(result.networkResult)
+        assertTrue(result.appLaunch is OptimizationResult.Success)
+        assertTrue(result.network is OptimizationResult.Success)
+
+        coVerify(exactly = 1) { launchBooster.optimizeAppLaunch("com.instagram.android") }
+        coVerify(exactly = 1) { networkBooster.applyNetworkOptimization() }
+        coVerify(exactly = 1) { launchBooster.prepare() }
+        coVerify(exactly = 1) { networkBooster.prepare() }
+        coVerify(exactly = 1) { launchBooster.cleanup() }
+        coVerify(exactly = 1) { networkBooster.cleanup() }
     }
 
     @Test
-    fun `optimize returns partial success when network coroutine fails`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>()
-        val networkBooster = mockk<NetworkSpeedBooster>()
+    fun `launch success network timeout`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
         val dispatcher = StandardTestDispatcher(testScheduler)
 
-        coEvery { launchBooster.optimizeAppLaunch("com.instagram.android") } returns true
-        coEvery { networkBooster.applyNetworkOptimization() } throws RuntimeException("permission denied")
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } returns OptimizationResult.Success(50L)
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Failure.Timeout(1000L)
 
         val coordinator = SystemOptimizationCoordinator(
-            launchBooster = launchBooster,
+            appLaunchBooster = launchBooster,
             networkBooster = networkBooster,
             dispatcher = dispatcher
         )
 
-        val result = coordinator.optimize("com.instagram.android")
-        advanceUntilIdle()
+        val result = coordinator.runFullOptimization("com.instagram.android")
 
-        assertTrue(result.launchResult)
-        assertFalse(result.networkResult)
+        assertTrue(result.appLaunch is OptimizationResult.Success)
+        assertTrue(result.network is OptimizationResult.Failure.Timeout)
+
+        coVerify(exactly = 1) { launchBooster.cleanup() }
+        coVerify(exactly = 1) { networkBooster.cleanup() }
     }
 
     @Test
-    fun `optimize returns failure when both coroutines fail`() = runTest {
-        val launchBooster = mockk<AppLaunchSpeedBooster>()
-        val networkBooster = mockk<NetworkSpeedBooster>()
+    fun `launch failure network success`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
         val dispatcher = StandardTestDispatcher(testScheduler)
 
-        coEvery { launchBooster.optimizeAppLaunch("com.instagram.android") } throws RuntimeException("launch failed")
-        coEvery { networkBooster.applyNetworkOptimization() } throws RuntimeException("network failed")
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } returns OptimizationResult.Failure.ExecutionFailed(
+            exitCode = 1,
+            errorLog = "permission denied"
+        )
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Success(30L)
 
         val coordinator = SystemOptimizationCoordinator(
-            launchBooster = launchBooster,
+            appLaunchBooster = launchBooster,
             networkBooster = networkBooster,
             dispatcher = dispatcher
         )
 
-        val result = coordinator.optimize("com.instagram.android")
-        advanceUntilIdle()
+        val result = coordinator.runFullOptimization("com.instagram.android")
 
-        assertFalse(result.launchResult)
-        assertFalse(result.networkResult)
+        assertTrue(result.appLaunch is OptimizationResult.Failure.ExecutionFailed)
+        val failure = result.appLaunch as OptimizationResult.Failure.ExecutionFailed
+        assertEquals(1, failure.exitCode)
+        assertEquals("permission denied", failure.errorLog)
+
+        assertTrue(result.network is OptimizationResult.Success)
+
+        coVerify(exactly = 1) { launchBooster.cleanup() }
+        coVerify(exactly = 1) { networkBooster.cleanup() }
+    }
+
+    @Test
+    fun `both timeout`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } returns OptimizationResult.Failure.Timeout(15000L)
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Failure.Timeout(10000L)
+
+        val coordinator = SystemOptimizationCoordinator(
+            appLaunchBooster = launchBooster,
+            networkBooster = networkBooster,
+            dispatcher = dispatcher
+        )
+
+        val result = coordinator.runFullOptimization("com.instagram.android")
+
+        assertTrue(result.appLaunch is OptimizationResult.Failure.Timeout)
+        assertTrue(result.network is OptimizationResult.Failure.Timeout)
+
+        coVerify(exactly = 1) { launchBooster.cleanup() }
+        coVerify(exactly = 1) { networkBooster.cleanup() }
+    }
+
+    @Test
+    fun `launch throws internal error`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } throws IllegalStateException("internal crash")
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Success(10L)
+
+        val coordinator = SystemOptimizationCoordinator(
+            appLaunchBooster = launchBooster,
+            networkBooster = networkBooster,
+            dispatcher = dispatcher
+        )
+
+        val result = coordinator.runFullOptimization("com.instagram.android")
+
+        assertTrue(result.appLaunch is OptimizationResult.Failure.InternalError)
+        val error = result.appLaunch as OptimizationResult.Failure.InternalError
+        assertEquals("internal crash", error.exception.message)
+
+        assertTrue(result.network is OptimizationResult.Success)
+
+        coVerify(exactly = 1) { launchBooster.cleanup() }
+        coVerify(exactly = 1) { networkBooster.cleanup() }
+    }
+
+    @Test
+    fun `both engines return failure`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } returns OptimizationResult.Failure.ExecutionFailed(255, "compile failed")
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Failure.ExecutionFailed(127, "network command not found")
+
+        val coordinator = SystemOptimizationCoordinator(
+            appLaunchBooster = launchBooster,
+            networkBooster = networkBooster,
+            dispatcher = dispatcher
+        )
+
+        val result = coordinator.runFullOptimization("com.instagram.android")
+
+        assertTrue(result.appLaunch is OptimizationResult.Failure.ExecutionFailed)
+        assertTrue(result.network is OptimizationResult.Failure.ExecutionFailed)
+
+        coVerify(exactly = 1) { launchBooster.cleanup() }
+        coVerify(exactly = 1) { networkBooster.cleanup() }
+    }
+
+    @Test
+    fun `blank package name returns error`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+
+        val coordinator = SystemOptimizationCoordinator(
+            appLaunchBooster = launchBooster,
+            networkBooster = networkBooster,
+            dispatcher = dispatcher
+        )
+
+        val report = coordinator.runFullOptimization("")
+
+        assertTrue(report.appLaunch is OptimizationResult.Failure.InternalError)
+        val failure = report.appLaunch as OptimizationResult.Failure.InternalError
+        assertTrue(failure.exception is IllegalArgumentException)
+    }
+
+    @Test
+    fun `insufficient privilege level immediately returns permission denied`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.ROOT_SU
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Success(30L)
+
+        val coordinator = SystemOptimizationCoordinator(
+            appLaunchBooster = launchBooster,
+            networkBooster = networkBooster,
+            dispatcher = dispatcher,
+            currentPrivilege = PrivilegeLevel.UNPRIVILEGED
+        )
+
+        val report = coordinator.runFullOptimization("com.instagram.android")
+
+        assertTrue(report.appLaunch is OptimizationResult.Failure.PermissionDenied)
+        assertTrue(report.network is OptimizationResult.Success)
+
+        coVerify(exactly = 0) { launchBooster.optimizeAppLaunch(any()) }
+    }
+
+    @Test
+    fun `retry policy is respected on failure`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { launchBooster.retryPolicy } returns RetryPolicy.ON_TIMEOUT
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.retryPolicy } returns RetryPolicy.NEVER
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } returns OptimizationResult.Failure.Timeout(100L)
+        coEvery { networkBooster.applyNetworkOptimization() } returns OptimizationResult.Failure.Timeout(100L)
+
+        val coordinator = SystemOptimizationCoordinator(
+            appLaunchBooster = launchBooster,
+            networkBooster = networkBooster,
+            dispatcher = dispatcher
+        )
+
+        coordinator.runFullOptimization("com.instagram.android")
+
+        coVerify(exactly = 3) { launchBooster.optimizeAppLaunch(any()) }
+        coVerify(exactly = 1) { networkBooster.applyNetworkOptimization() }
+    }
+
+    @Test
+    fun `cooperative cancellation cleanup`() = runTest {
+        val launchBooster = mockk<AppLaunchSpeedBooster>(relaxed = true)
+        val networkBooster = mockk<NetworkSpeedBooster>(relaxed = true)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+
+        coEvery { launchBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+        coEvery { networkBooster.requiredPrivilege } returns PrivilegeLevel.UNPRIVILEGED
+
+        coEvery { launchBooster.optimizeAppLaunch(any()) } coAnswers {
+            kotlinx.coroutines.delay(5000)
+            OptimizationResult.Success(100)
+        }
+        coEvery { networkBooster.applyNetworkOptimization() } coAnswers {
+            kotlinx.coroutines.delay(5000)
+            OptimizationResult.Success(100)
+        }
+
+        val coordinator = SystemOptimizationCoordinator(
+            appLaunchBooster = launchBooster,
+            networkBooster = networkBooster,
+            dispatcher = dispatcher
+        )
+
+        val job = launch {
+            coordinator.runFullOptimization("com.instagram.android")
+        }
+
+        testScheduler.advanceTimeBy(1000)
+        job.cancel()
+        testScheduler.advanceUntilIdle()
+
+        coVerify(exactly = 1) { launchBooster.cleanup() }
+        coVerify(exactly = 1) { networkBooster.cleanup() }
     }
 }
