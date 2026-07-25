@@ -30,7 +30,12 @@ class MainActivity(
 
         lifecycleScope.launch {
             try {
-                val outcome = coordinator.optimize()
+                val result = coordinator.optimize("com.instagram.android")
+                val outcome = when {
+                    result.launchResult && result.networkResult -> OptimizationOutcome.FullSuccess
+                    result.launchResult || result.networkResult -> OptimizationOutcome.PartialSuccess
+                    else -> OptimizationOutcome.FullFailure
+                }
                 lastOutcome = outcome
 
                 currentUiState = when (outcome) {
